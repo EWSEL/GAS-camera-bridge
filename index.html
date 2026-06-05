@@ -120,133 +120,164 @@
     </div>
   </div>
 
-  <script>
-    let stream = null;
-    let photoWasTaken = false;
+<script>
+  let stream = null;
+  let photoWasTaken = false;
 
-    const video = document.getElementById("video");
-    const canvas = document.getElementById("canvas");
-    const statusDiv = document.getElementById("status");
-    const hintDiv = document.getElementById("hint");
-    const retryBtn = document.getElementById("retryBtn");
+  const video = document.getElementById("video");
+  const canvas = document.getElementById("canvas");
+  const statusDiv = document.getElementById("status");
+  const hintDiv = document.getElementById("hint");
+  const retryBtn = document.getElementById("retryBtn");
 
-    window.addEventListener("DOMContentLoaded", () => {
-      initCamera();
-    });
+  window.addEventListener("DOMContentLoaded", () => {
+    initCamera();
+  });
 
-    async function initCamera() {
-      try {
-        retryBtn.style.display = "none";
-        statusDiv.textContent = "Kamera wird gestartet...";
-        statusDiv.className = "status";
-        hintDiv.textContent = "Bitte Kamera-Zugriff erlauben. Das Foto wird automatisch aufgenommen.";
-        photoWasTaken = false;
+  async function initCamera() {
+    try {
+      retryBtn.style.display = "none";
+      statusDiv.textContent = "Kamera wird gestartet...";
+      statusDiv.className = "status";
+      hintDiv.textContent = "Bitte Kamera-Zugriff erlauben. Das Foto wird automatisch aufgenommen.";
+      photoWasTaken = false;
 
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          throw new Error("Kamera wird in diesem Browser nicht unterstützt.");
-        }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Kamera wird in diesem Browser nicht unterstützt.");
+      }
 
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: "user"
-          },
-          audio: false
-        });
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "user",
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        },
+        audio: false
+      });
 
-        video.srcObject = stream;
+      video.srcObject = stream;
+
+      video.onloadedmetadata = async function () {
         await video.play();
 
-        statusDiv.textContent = "Foto wird automatisch aufgenommen...";
+        statusDiv.textContent = "Kamera bereit...";
         hintDiv.textContent = "Bitte kurz stillhalten.";
 
-        waitForRealVideoAndCapture();
+        waitUntilVideoHasRealFrame();
+      };
 
-      } catch (err) {
-        console.error("Camera runtime block exception:", err);
+    } catch (err) {
+      console.error("Camera runtime block exception:", err);
 
-        statusDiv.textContent = "Kamera-Berechtigung nötig";
-        statusDiv.className = "status error";
-        hintDiv.textContent = "Bitte Kamera-Zugriff im Browser erlauben und erneut versuchen.";
-        retryBtn.style.display = "block";
+      statusDiv.textContent = "Kamera-Berechtigung nötig";
+      statusDiv.className = "status error";
+      hintDiv.textContent = "Bitte Kamera-Zugriff im Browser erlauben und erneut versuchen.";
+      retryBtn.style.display = "block";
+    }
+  }
+
+  function waitUntilVideoHasRealFrame() {
+    let tries = 0;
+    const maxTries = 80;
+
+    const interval = setInterval(() => {
+      tries++;
+
+      const hasRealFrame =
+        video.readyState >= 2 &&
+        video.videoWidth > 0 &&
+        video.videoHeight > 0;
+
+      console.log("Video check:", {
+        readyState: video.readyState,
+        width: video.videoWidth,
+        height: video.videoHeight,
+        tries: tries
+      });
+
+      if (hasRealFrame && !photoWasTaken) {
+        clearInterval(interval);
+
+        statusDiv.textContent = "Foto wird aufgenommen...";
+
+        setTimeout(() => {
+          capturePhoto();
+        }, 1500);
       }
-    }
 
-    function waitForRealVideoAndCapture() {
-      let tries = 0;
-      const maxTries = 30;
+      if (tries >= maxTries) {
+        clearInterval(interval);
 
-      const interval = setInterval(() => {
-        tries++;
-
-        if (video.videoWidth > 0 && video.videoHeight > 0 && !photoWasTaken) {
-          clearInterval(interval);
-
-          // Kleine Wartezeit, damit das Bild nicht schwarz/leer ist
-          setTimeout(() => {
-            capturePhoto();
-          }, 800);
-        }
-
-        if (tries >= maxTries) {
-          clearInterval(interval);
-          statusDiv.textContent = "Kamera nicht bereit";
-          statusDiv.className = "status error";
-          hintDiv.textContent = "Bitte erneut versuchen.";
-          retryBtn.style.display = "block";
-        }
-      }, 100);
-    }
-
-    function capturePhoto() {
-      if (photoWasTaken) return;
-
-      if (!stream || !video.videoWidth || !video.videoHeight) {
-        statusDiv.textContent = "Kamera noch nicht bereit";
+        statusDiv.textContent = "Kamera nicht bereit";
         statusDiv.className = "status error";
         hintDiv.textContent = "Bitte erneut versuchen.";
         retryBtn.style.display = "block";
-        return;
       }
+    }, 100);
+  }
 
-      photoWasTaken = true;
+  function capturePhoto() {
+    if (photoWasTaken) return;
 
-      statusDiv.textContent = "Foto wird gespeichert...";
-      statusDiv.className = "status saving";
-      hintDiv.textContent = "Foto wird an die Zeiterfassung übertragen.";
-
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-
-      const context = canvas.getContext("2d");
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      const base64DataUrl = canvas.toDataURL("image/png");
-
-      if (window.opener) {
-        window.opener.postMessage({
-          type: "CAMERA_CAPTURE_SUCCESS",
-          base64DataUrl: base64DataUrl
-        }, "*");
-      }
-
-      stopCamera();
-
-      setTimeout(() => {
-        window.close();
-      }, 500);
+    if (!stream || video.videoWidth <= 0 || video.videoHeight <= 0) {
+      statusDiv.textContent = "Kamera noch nicht bereit";
+      statusDiv.className = "status error";
+      hintDiv.textContent = "Bitte erneut versuchen.";
+      retryBtn.style.display = "block";
+      return;
     }
 
-    function stopCamera() {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-        stream = null;
-      }
+    photoWasTaken = true;
+
+    statusDiv.textContent = "Foto wird gespeichert...";
+    statusDiv.className = "status saving";
+    hintDiv.textContent = "Foto wird an die Zeiterfassung übertragen.";
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const context = canvas.getContext("2d");
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const base64DataUrl = canvas.toDataURL("image/png");
+
+    console.log("Base64 Anfang:", base64DataUrl.substring(0, 50));
+    console.log("Base64 Länge:", base64DataUrl.length);
+
+    if (!base64DataUrl || base64DataUrl === "data:," || base64DataUrl.length < 1000) {
+      photoWasTaken = false;
+      statusDiv.textContent = "Foto war leer";
+      statusDiv.className = "status error";
+      hintDiv.textContent = "Bitte erneut versuchen.";
+      retryBtn.style.display = "block";
+      return;
     }
 
-    window.addEventListener("beforeunload", () => {
-      stopCamera();
-    });
-  </script>
+    if (window.opener) {
+      window.opener.postMessage({
+        type: "CAMERA_CAPTURE_SUCCESS",
+        base64DataUrl: base64DataUrl
+      }, "*");
+    }
+
+    stopCamera();
+
+    setTimeout(() => {
+      window.close();
+    }, 700);
+  }
+
+  function stopCamera() {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      stream = null;
+    }
+  }
+
+  window.addEventListener("beforeunload", () => {
+    stopCamera();
+  });
+</script>
 </body>
 
 </html>
