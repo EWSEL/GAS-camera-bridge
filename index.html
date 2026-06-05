@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Camera Bridge</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 12px;
+    }
+
+    video {
+      width: 100%;
+      max-width: 380px;
+      border-radius: 10px;
+      background: #000;
+    }
+
+    button {
+      margin-top: 12px;
+      padding: 12px 18px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h3>Foto aufnehmen</h3>
+
+  <video id="video" autoplay muted playsinline></video>
+  <br>
+  <button onclick="capturePhoto()">Foto speichern</button>
+
+  <script>
+    const video = document.getElementById("video");
+    let stream = null;
+
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user" },
+          audio: false
+        });
+
+        video.srcObject = stream;
+        await video.play();
+      } catch (error) {
+        alert("Kamera konnte nicht gestartet werden: " + error.message);
+      }
+    }
+
+    function capturePhoto() {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      const context = canvas.getContext("2d");
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const base64DataUrl = canvas.toDataURL("image/png");
+
+      if (window.opener) {
+        window.opener.postMessage({
+          type: "CAMERA_CAPTURE_SUCCESS",
+          base64DataUrl: base64DataUrl
+        }, "https://script.google.com");
+      }
+
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+
+      window.close();
+    }
+
+    startCamera();
+  </script>
+</body>
+</html>
